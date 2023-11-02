@@ -1,5 +1,5 @@
 from catboost import CatBoostClassifier, Pool
-from helps import *
+from utils import *
 import numpy as np
 
 def run_CatBoost_model(X, y, X_val, y_val, X_train, y_train, X_test, y_test, verbose=True):
@@ -87,14 +87,14 @@ def run_CatBoost_model(X, y, X_val, y_val, X_train, y_train, X_test, y_test, ver
 from sklearn.linear_model import LogisticRegression
 import shap
 
-def run_Logistic_Regression_model(X, y, X_val, y_val, X_train, y_train, X_test, y_test, verbose=False):
+def run_Logistic_Regression_model(X_log, y, X_val_log, y_val, X_train_log, y_train, X_test_log, y_test, verbose=False):
     clf = dict()
     pred = dict()
     pred_prob = dict()
     score = dict()
     log_creport = dict()
     shap_values = dict()
-
+    return_result = {}
     for out in y:
         print(out)
         print('Logistic Regression Model Performance for: ' +  out + ' outcome.')
@@ -119,13 +119,14 @@ def run_Logistic_Regression_model(X, y, X_val, y_val, X_train, y_train, X_test, 
 
 from sklearn.ensemble import RandomForestClassifier
 
-def run_Random_Forest_model(X, y, X_val, y_val, X_train, y_train, X_test, y_test, verbose=False):
+def run_Random_Forest_model(X_log, y, X_val_log, y_val, X_train_log, y_train, X_test_log, y_test, verbose=False):
     clf = dict()
     pred = dict()
     pred_prob = dict()
     score = dict()
     log_creport = dict()
     shap_values = dict()
+    return_result = {}
 
     for out in y:
         print(out)
@@ -150,13 +151,14 @@ from sklearn.svm import SVC
 from sklearn import svm
 from sklearn.pipeline import make_pipeline
 
-def run_SVM_model(X, y, X_val, y_val, X_train, y_train, X_test, y_test, verbose=False):
+def run_SVM_model(X_log, y, X_val_log, y_val, X_train_log, y_train, X_test_log, y_test, verbose=False):
     clf = dict()
     pred = dict()
     pred_prob = dict()
     score = dict()
     log_creport = dict()
     shap_values = dict()
+    return_result = {}
 
     for out in y:
         print(out)
