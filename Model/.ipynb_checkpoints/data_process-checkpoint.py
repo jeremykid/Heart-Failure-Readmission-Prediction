@@ -29,7 +29,7 @@ def preprocess_HFclassifier(lb_obs_id, label_type, feat_type, ndays, evalsplit,
     
     random.seed(14)
     mindays = 365 #minimum number of days in observation window : any integer, default 365 days for 1yrlb_fix
-    proc_datadir = '/file_name/'
+    proc_datadir = '/home/padmalab/heart_failure/data/processed/'
     label_fname = proc_datadir + 'label_4_tables_2002_death_inp_pop_added.pickle'
     sel_feats_dict_fname = proc_datadir + 'sel_grp_feats_dict_0216_' + lb_obs_id + '_200920.pickle'
     ftdata_allsub_fname = proc_datadir + 'feats_allsub_0216_' + lb_obs_id + '_040920.pickle'

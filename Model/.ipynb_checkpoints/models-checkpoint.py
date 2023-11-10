@@ -2,6 +2,13 @@ from catboost import CatBoostClassifier, Pool
 from utils import *
 import numpy as np
 
+import torch
+import torch.nn as nn
+import torch.optim as optim
+    
+from torch.utils.data import DataLoader, TensorDataset
+from generate_report import get_optimal_cutoff, get_pred_report, evalplots, class_report
+
 def run_CatBoost_model(X, y, X_val, y_val, X_train, y_train, X_test, y_test, verbose=True):
     '''
     CatBoost Model
@@ -179,3 +186,146 @@ def run_SVM_model(X_log, y, X_val_log, y_val, X_train_log, y_train, X_test_log, 
         "SVM_creport": log_creport,
     }
     return return_result
+
+
+# Define the neural network model
+class DeepModel(nn.Module):
+    def __init__(self, input_size):
+        super(DeepModel, self).__init__()
+        self.input_size = input_size
+        # Input layer to first hidden layer (200 -> 330)
+        self.fc1 = nn.Linear(self.input_size, 330)
+        self.dropout1 = nn.Dropout(0.2)
+        self.fc2 = nn.Linear(330, 433)
+        self.dropout2 = nn.Dropout(0.2)
+        self.fc3 = nn.Linear(433, 511)
+        self.dropout3 = nn.Dropout(0.2)
+        self.fc4 = nn.Linear(511, 449)
+        self.dropout4 = nn.Dropout(0.2)
+        self.fc5 = nn.Linear(449, 1)
+        self.sigmoid = nn.Sigmoid()
+        
+    def forward(self, x):
+        x = torch.relu(self.fc1(x))
+        x = self.dropout1(x)
+        
+        x = torch.relu(self.fc2(x))
+        x = self.dropout2(x)
+        
+        x = torch.relu(self.fc3(x))
+        x = self.dropout3(x)
+        
+        x = torch.relu(self.fc4(x))
+        x = self.dropout4(x)
+        
+        x = self.fc5(x)
+        x = self.sigmoid(x)
+        return x
+    
+
+
+# out = 'readm_death'
+def generate_torch_loader(X,Y,batch_size=32):
+    X_tensor = torch.tensor(X.values.astype(np.float32))
+    Y_tensor = torch.tensor(Y.values.astype(np.float32))
+    dataset = TensorDataset(X_tensor, Y_tensor)
+    torch_loader = DataLoader(dataset, batch_size=batch_size, shuffle=True)
+    return torch_loader
+
+
+def get_pre_label(model, data_loader):
+    model.eval()
+    lossfun = nn.BCELoss()
+    pred_list = []
+    label_list = []
+    with torch.no_grad():
+        with tqdm(total=len(data_loader)) as pbar:
+            for X_batch, y_batch in data_loader:
+                y_pred = model(X_batch)
+                loss = lossfun(y_pred, y_batch)
+                pred_list.append(y_pred)
+                label_list.append(y_batch)
+                pbar.update(1)
+    pred_list = [pred.cpu().detach().numpy() for pred in pred_list]
+    label_list = [label.cpu().detach().numpy() for label in label_list]
+
+    labels = np.concatenate(label_list, axis=0)
+    pred = np.concatenate(pred_list, axis=0)
+    labels = labels.reshape(labels.shape[0], 1)
+    pred = pred.reshape(pred.shape[0], 1)
+    return labels, pred
+
+def train_torch_model(train_loader, val_loader, model_path, input_size, pos_weight = None):
+    model = DeepModel(input_size=input_size)
+    # Loss function and optimizer
+    
+    if pos_weight == None:
+        criterion = nn.BCELoss()
+    else:
+        criterion = torch.nn.BCEWithLogitsLoss(pos_weight=pos_weight)  
+    optimizer = optim.Adam(model.parameters(), lr=0.001)
+
+    # Training and Validation
+    n_epochs = 50  # Number of epochs; you can adjust this value
+
+    min_val_loss = 999999999999999999
+    early_stop_count, early_stop_epoch = 0, 9
+    for epoch in range(n_epochs):
+        if early_stop_count >= early_stop_epoch:
+            break
+        model.train()  # Set model to training mode
+        train_loss = 0.0
+        # Training loop
+        for X_batch, y_batch in train_loader:
+            y_pred = model(X_batch)
+            loss = criterion(y_pred, y_batch.view(-1, 1))
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+            train_loss += loss.item()
+            
+        # balance class weight in pytorch
+        train_loss /= len(train_loader)
+        print(f"Epoch {epoch+1}/{n_epochs} - Train Loss: {train_loss}")
+
+        model.eval()  # Set model to evaluation mode
+
+        # Validation loop
+        val_loss = 0.0
+        with torch.no_grad():
+            for X_batch, y_batch in val_loader:
+                y_pred = model(X_batch)
+                loss = criterion(y_pred, y_batch.view(-1, 1))
+                val_loss += loss.item()
+
+        val_loss /= len(val_loader)
+
+        if val_loss < min_val_loss:
+            min_val_loss = val_loss
+            print ('save_model:', val_loss)
+            torch.save(model, model_path)
+            early_stop_count = 0
+        else:
+            early_stop_count += 1
+
+        print(f"Epoch {epoch+1}/{n_epochs} - Validation Loss: {val_loss}")
+    return model
+ 
+
+def run_NN_model(X, y, X_val, y_val, X_train, y_train, X_test, y_test):
+    train_loader = generate_torch_loader(X_train, y_train)
+    val_loader = generate_torch_loader(X_val, y_val)
+    test_loader = generate_torch_loader(X_test, y_test)
+
+    model = train_torch_model(train_loader, val_loader, model_path, input_size)
+    
+    train_labels, train_pred = get_pre_label(model, train_loader)
+    test_labels, test_pred = get_pre_label(model, test_loader)
+
+    # Use the train_y to generate the optimal cutoff point
+    _,_, _, _, roc_j_thr_dict = get_optimal_cutoff(train_labels,train_pred, ['out'])
+    # Use the test_y to generate report
+    class_df_dict, creport_dict = get_pred_report(test_labels,test_pred,['out'],roc_j_thr_dict, verbose=False) # verbose = False
+    
+    return creport_dict
+    
